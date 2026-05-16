@@ -3,26 +3,26 @@ from google.cloud import storage
 from google.oauth2 import service_account
 import time
 import requests
-from langchain_mongodb.chat_message_histories import MongoChatMessageHistory
+from langchain_mongodb.chat_message_histories import MongoDBChatMessageHistory
+from pymongo import MongoClient
+from datetime import datetime
 
 st.set_page_config(page_title="SmartStudy Tutor", page_icon="🎓", layout="centered")
 
 # --- CONFIGURATION ---
 BUCKET_NAME = "pdf_bucket_project"
 PROJECT_ID = "projet-cloud-computing-493007"
+MONGO_URI = "mongodb+srv://projetcloud:projetcloud@geminirag.shbfocl.mongodb.net/?appName=GeminiRAG"
+MONGO_DB = "smartstudy"
+MONGO_COLLECTION = "chat_history"
 
 API_BASE_URL = "https://smartstudy-api-64317660927.europe-west1.run.app"
 API_ASK_URL = f"{API_BASE_URL}/ask"
 API_QUIZ_URL = f"{API_BASE_URL}/quiz"
 
-<<<<<<< HEAD
-st.title("SmartStudy Tutor")
-st.markdown("### Welcome to your intelligent learning space")
-st.write("Upload your course as PDF to start the session.")
-=======
 
+# --- HELPERS ---
 def get_storage_client():
-    """Marche en local (gcloud auth) ET sur Streamlit Cloud (secrets.toml)."""
     try:
         if "gcp_service_account" in st.secrets:
             creds = service_account.Credentials.from_service_account_info(
@@ -30,95 +30,152 @@ def get_storage_client():
             )
             return storage.Client(project=PROJECT_ID, credentials=creds)
     except Exception:
-        pass  # Pas de secrets.toml en local, on retombe sur gcloud auth
+        pass
     return storage.Client(project=PROJECT_ID)
 
 
-st.title("🎓 SmartStudy Tutor")
-st.markdown("### Bienvenue dans ton espace d'apprentissage intelligent")
->>>>>>> 83a2abc (code de l'interface)
-
-# State initialization
-if "file_ready" not in st.session_state:
-    st.session_state.file_ready = False
-if "messages" not in st.session_state:
-    st.session_state.messages = []
-if "current_filename" not in st.session_state:
-    st.session_state.current_filename = None
-<<<<<<< HEAD
-if "save_to_history" not in st.session_state:
-    st.session_state.save_to_history = False
-
-# Initialize MongoDB Chat History
-chat_with_history = None
+def get_chat_history(session_id: str) -> MongoDBChatMessageHistory:
+    return MongoDBChatMessageHistory(
+        session_id=session_id,
+        connection_string=MONGO_URI,
+        collection_name=MONGO_COLLECTION,
+        database_name=MONGO_DB,
+    )
 
 
-# --- SECTION 1: FILE UPLOAD ---
-with st.container():
-    uploaded_file = st.file_uploader("Choose your PDF file", type="pdf")
-
-    if uploaded_file is not None and not st.session_state.file_ready:
-        if st.button("Start Course Analysis"):
-            with st.status("Processing document...", expanded=True) as status:
-                st.write(" Sending file to Google Cloud Storage...")
-                client = storage.Client(project=PROJECT_ID)
-                bucket = client.bucket(BUCKET_NAME)
-                blob = bucket.blob(uploaded_file.name)
-                blob.upload_from_file(uploaded_file)
-                st.write("File uploaded.")
-
-                st.write(" Document analysis and indexing in progress...")
-                st.write("(This may take 30 to 60 seconds)")
-                time.sleep(45)
-
-                st.write("Document indexed!")
-                status.update(label="Analysis complete!", state="complete", expanded=False)
-=======
-if "quiz_data" not in st.session_state:
-    st.session_state.quiz_data = None
-if "quiz_answers" not in st.session_state:
-    st.session_state.quiz_answers = {}
-if "quiz_submitted" not in st.session_state:
-    st.session_state.quiz_submitted = False
-if "show_quiz" not in st.session_state:
-    st.session_state.show_quiz = False
+@st.cache_data(ttl=30)
+def load_past_sessions():
+    """Fetch all past sessions from MongoDB, sorted by most recent."""
+    try:
+        client = MongoClient(MONGO_URI)
+        col = client[MONGO_DB][MONGO_COLLECTION]
+        sessions = col.aggregate([
+            {"$group": {
+                "_id": "$SessionId",
+                "last_updated": {"$max": "$_id"},
+                "message_count": {"$sum": 1},
+            }},
+            {"$sort": {"last_updated": -1}},
+            {"$limit": 30},
+        ])
+        return list(sessions)
+    except Exception:
+        return []
 
 
-# --- SIDEBAR : choix du mode + actions ---
+@st.cache_data(ttl=60)
+def load_session_messages(session_id: str):
+    """Load messages from a past session and return as list of dicts."""
+    try:
+        client = MongoClient(MONGO_URI)
+        col = client[MONGO_DB][MONGO_COLLECTION]
+        # Each document in the collection is one message
+        docs = list(col.find({"SessionId": session_id}).sort("_id", 1))
+        messages = []
+        for doc in docs:
+            # langchain_mongodb stores messages inside a "History" field as JSON
+            history_data = doc.get("History", {})
+            msg_type = history_data.get("type", "")
+            content = history_data.get("data", {}).get("content", "")
+            if msg_type == "human":
+                messages.append({"role": "user", "content": content})
+            elif msg_type == "ai":
+                messages.append({"role": "assistant", "content": content})
+        return messages
+    except Exception:
+        return []
+
+
+def format_session_label(session_id: str):
+    """Turn 'cours.pdf_1716800000' into (filename, date)."""
+    parts = session_id.rsplit("_", 1)
+    if len(parts) == 2:
+        filename = parts[0]
+        try:
+            ts = int(parts[1])
+            date = datetime.fromtimestamp(ts).strftime("%d/%m %H:%M")
+            return filename, date
+        except ValueError:
+            pass
+    return session_id, ""
+
+
+# --- STATE INITIALIZATION ---
+defaults = {
+    "file_ready": False,
+    "messages": [],
+    "current_filename": None,
+    "session_id": None,
+    "quiz_data": None,
+    "quiz_answers": {},
+    "quiz_submitted": False,
+    "show_quiz": False,
+}
+for key, val in defaults.items():
+    if key not in st.session_state:
+        st.session_state[key] = val
+
+
+# --- SIDEBAR ---
 with st.sidebar:
-    st.header("⚙️ Paramètres")
+    st.title("🎓 SmartStudy")
+
     mode = st.radio(
         "Mode du tuteur",
         options=["persona", "normal"],
-        format_func=lambda x: "🎓 Tuteur Personna" if x == "persona" else " Mode Normal",
-        help=(
-            "**Tuteur Personna** : ton académique, citations, tips, questions de réflexion.\n\n"
-            "**Mode Normal** : réponses directes et concises."
-        ),
+        format_func=lambda x: "🎓 Tuteur Personna" if x == "persona" else "📝 Mode Normal",
     )
 
     st.divider()
 
-    if st.session_state.file_ready and st.session_state.current_filename:
-        st.success(f" Document actif :\n`{st.session_state.current_filename}`")
+    if st.button("✏️ Nouvelle conversation", use_container_width=True):
+        st.session_state.file_ready = False
+        st.session_state.messages = []
+        st.session_state.current_filename = None
+        st.session_state.session_id = None
+        st.session_state.quiz_data = None
+        st.session_state.quiz_answers = {}
+        st.session_state.quiz_submitted = False
+        st.session_state.show_quiz = False
+        st.rerun()
 
-        if st.button("Charger un autre PDF", use_container_width=True):
-            st.session_state.file_ready = False
-            st.session_state.messages = []
-            st.session_state.current_filename = None
+    if st.session_state.file_ready and not st.session_state.show_quiz:
+        if st.button("🧠 Lancer un quiz", use_container_width=True, type="primary"):
+            st.session_state.show_quiz = True
             st.session_state.quiz_data = None
             st.session_state.quiz_answers = {}
             st.session_state.quiz_submitted = False
-            st.session_state.show_quiz = False
             st.rerun()
 
-        if not st.session_state.show_quiz:
-            if st.button("Lancer un quiz interactif", use_container_width=True, type="primary"):
-                st.session_state.show_quiz = True
-                st.session_state.quiz_data = None
-                st.session_state.quiz_answers = {}
-                st.session_state.quiz_submitted = False
+    st.divider()
+    st.markdown("#### 🕐 Conversations récentes")
+
+    past_sessions = load_past_sessions()
+
+    if not past_sessions:
+        st.caption("Aucune conversation sauvegardée.")
+    else:
+        for s in past_sessions:
+            sid = s["_id"]
+            filename, date = format_session_label(sid)
+            is_active = sid == st.session_state.session_id
+            prefix = "▶ " if is_active else ""
+            label = f"{prefix}📄 {filename}\n🕐 {date}" if date else f"{prefix}📄 {filename}"
+
+            if st.button(label, key=f"sess_{sid}", use_container_width=True):
+                msgs = load_session_messages(sid)
+                parts = sid.rsplit("_", 1)
+                st.session_state.messages = msgs
+                st.session_state.session_id = sid
+                st.session_state.current_filename = parts[0] if len(parts) == 2 else sid
+                st.session_state.file_ready = True
+                st.session_state.show_quiz = False
                 st.rerun()
+
+
+# --- MAIN ---
+st.title("🎓 SmartStudy Tutor")
+st.markdown("### Bienvenue dans ton espace d'apprentissage intelligent")
 
 
 # --- SECTION 1 : UPLOAD ---
@@ -131,67 +188,37 @@ if not st.session_state.file_ready:
         if uploaded_file is not None:
             if st.button("Lancer l'analyse du cours"):
                 with st.status("Traitement du document...", expanded=True) as status:
-                    st.write("Envoi du fichier vers Google Cloud Storage...")
+                    st.write("📤 Envoi du fichier vers Google Cloud Storage...")
                     client = get_storage_client()
                     bucket = client.bucket(BUCKET_NAME)
                     blob = bucket.blob(uploaded_file.name)
                     blob.upload_from_file(uploaded_file)
                     st.session_state.current_filename = uploaded_file.name
-                    st.write(f" Fichier `{uploaded_file.name}` envoyé.")
+                    st.write(f"✅ Fichier `{uploaded_file.name}` envoyé.")
 
-                    st.write("Analyse et indexation du document en cours...")
+                    st.write("🔍 Analyse et indexation du document en cours...")
                     st.write("(Cela peut prendre 30 à 60 secondes)")
                     time.sleep(45)
->>>>>>> 83a2abc (code de l'interface)
 
-                    st.write(" Document indexé !")
+                    st.write("✅ Document indexé !")
                     status.update(label="Analyse terminée !", state="complete", expanded=False)
 
-<<<<<<< HEAD
-# --- SECTION 2: CHAT ---
-
-
-# Button to change PDF
-if st.session_state.file_ready:
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        if st.button("📄 Load Another PDF"):
-            st.session_state.file_ready = False
-            st.session_state.messages = []
-            st.session_state.current_filename = None
-            st.session_state.save_to_history = False
-            st.rerun()
-    
-    with col2:
-        if st.button("💾 " + ("Disable History" if st.session_state.save_to_history else "Enable History")):
-            st.session_state.save_to_history = not st.session_state.save_to_history
-            st.rerun()
-
-
-
-if st.session_state.file_ready:
-    st.success(f"**Active Document:** `{st.session_state.current_filename}`")
-    
-    # Display history status
-    if st.session_state.save_to_history:
-        st.info("💾 History enabled - your conversations will be saved")
-    
-    st.divider()
-    st.subheader(" Ask Questions About Your Course")
-=======
+                st.session_state.session_id = f"{uploaded_file.name}_{int(time.time())}"
                 st.session_state.file_ready = True
+                st.session_state.messages = []
+                # Invalide le cache pour que la nouvelle session apparaisse
+                load_past_sessions.clear()
                 st.balloons()
                 st.rerun()
 
 
-# --- SECTION 2A : MODE QUIZ INTERACTIF ---
+# --- SECTION 2A : QUIZ ---
 if st.session_state.file_ready and st.session_state.show_quiz:
     st.divider()
 
     col_title, col_close = st.columns([5, 1])
     with col_title:
-        st.subheader(" Quiz interactif")
+        st.subheader("🧠 Quiz interactif")
     with col_close:
         if st.button("✖ Fermer", use_container_width=True):
             st.session_state.show_quiz = False
@@ -200,9 +227,8 @@ if st.session_state.file_ready and st.session_state.show_quiz:
             st.session_state.quiz_submitted = False
             st.rerun()
 
-    # Génération du quiz si pas encore fait
     if st.session_state.quiz_data is None:
-        with st.spinner(" Le mentor prépare ton quiz..."):
+        with st.spinner("🎓 Le mentor prépare ton quiz..."):
             try:
                 res = requests.post(
                     API_QUIZ_URL,
@@ -223,13 +249,11 @@ if st.session_state.file_ready and st.session_state.show_quiz:
             except Exception as e:
                 st.error(f"Erreur de connexion : {e}")
 
-    # Affichage du quiz
     if st.session_state.quiz_data:
         questions = st.session_state.quiz_data
 
-        # === Avant soumission : formulaire interactif ===
         if not st.session_state.quiz_submitted:
-            st.info(f" **{len(questions)} questions** — Choisis une réponse pour chacune, puis soumets.")
+            st.info(f"📋 **{len(questions)} questions** — Choisis une réponse pour chacune, puis soumets.")
 
             for i, q in enumerate(questions):
                 with st.container(border=True):
@@ -245,19 +269,14 @@ if st.session_state.file_ready and st.session_state.show_quiz:
                         st.session_state.quiz_answers[i] = choice
 
             all_answered = len(st.session_state.quiz_answers) == len(questions)
-            if st.button(
-                "Soumettre mes réponses",
-                disabled=not all_answered,
-                use_container_width=True,
-                type="primary",
-            ):
+            if st.button("Soumettre mes réponses", disabled=not all_answered,
+                         use_container_width=True, type="primary"):
                 st.session_state.quiz_submitted = True
                 st.rerun()
 
             if not all_answered:
                 st.caption(f"Réponses données : {len(st.session_state.quiz_answers)}/{len(questions)}")
 
-        # === Après soumission : résultats ===
         else:
             score = sum(
                 1 for i, q in enumerate(questions)
@@ -266,22 +285,20 @@ if st.session_state.file_ready and st.session_state.show_quiz:
             total = len(questions)
             pct = round(100 * score / total)
 
-            # Score visuel + feedback
             if pct >= 80:
-                st.success(f" Excellent ! Score : **{score}/{total}** ({pct}%)")
+                st.success(f"🏆 Excellent ! Score : **{score}/{total}** ({pct}%)")
                 feedback = "Tu maîtrises bien ce chapitre. Continue comme ça !"
             elif pct >= 50:
-                st.warning(f" Pas mal ! Score : **{score}/{total}** ({pct}%)")
+                st.warning(f"👍 Pas mal ! Score : **{score}/{total}** ({pct}%)")
                 feedback = "Quelques notions à revoir. Regarde bien les explications ci-dessous."
             else:
-                st.error(f" À retravailler. Score : **{score}/{total}** ({pct}%)")
+                st.error(f"📚 À retravailler. Score : **{score}/{total}** ({pct}%)")
                 feedback = "Pas de panique, c'est en se trompant qu'on apprend ! Lis bien les corrections."
 
             st.markdown(f"_{feedback}_")
             st.progress(pct / 100)
             st.divider()
 
-            # Détail question par question
             for i, q in enumerate(questions):
                 user_answer = st.session_state.quiz_answers.get(i)
                 correct = q["correct_index"]
@@ -301,22 +318,20 @@ if st.session_state.file_ready and st.session_state.show_quiz:
                         else:
                             st.markdown(f"- {prefix}. {opt}")
 
-                    st.info(f" **Explication :** {q['explanation']}")
+                    st.info(f"💡 **Explication :** {q['explanation']}")
                     if q.get("source"):
                         st.caption(f"Source : {q['source']}")
 
             st.divider()
-
-            # Boutons d'action après le quiz
             col1, col2 = st.columns(2)
             with col1:
-                if st.button("Refaire un nouveau quiz", use_container_width=True):
+                if st.button("🔄 Refaire un nouveau quiz", use_container_width=True):
                     st.session_state.quiz_data = None
                     st.session_state.quiz_answers = {}
                     st.session_state.quiz_submitted = False
                     st.rerun()
             with col2:
-                if st.button(" Retour au chat", use_container_width=True):
+                if st.button("💬 Retour au chat", use_container_width=True):
                     st.session_state.show_quiz = False
                     st.rerun()
 
@@ -326,16 +341,15 @@ elif st.session_state.file_ready:
     st.success(f"**Document actif :** `{st.session_state.current_filename}`")
     st.divider()
 
-    mode_label = "🎓 Mentor" if mode == "persona" else " Direct"
+    mode_label = "🎓 Mentor" if mode == "persona" else "📝 Direct"
     st.subheader(f"Pose tes questions — Mode {mode_label}")
-    st.caption("Astuce : utilise le bouton ** Lancer un quiz interactif** dans la sidebar pour te tester.")
->>>>>>> 83a2abc (code de l'interface)
+    st.caption("Astuce : utilise le bouton **🧠 Lancer un quiz** dans la sidebar pour te tester.")
 
     for msg in st.session_state.messages:
         with st.chat_message(msg["role"]):
             st.markdown(msg["content"])
 
-    if prompt := st.chat_input("Ex: Summarize the key points for me"):
+    if prompt := st.chat_input("Ex: Résume les points clés pour moi"):
         st.session_state.messages.append({"role": "user", "content": prompt})
         with st.chat_message("user"):
             st.markdown(prompt)
@@ -347,50 +361,29 @@ elif st.session_state.file_ready:
         }
 
         with st.chat_message("assistant"):
-<<<<<<< HEAD
-            with st.spinner("Searching through your documents..."):
-                try:
-                    res = requests.post(
-                        API_ASK_URL,  # ← Note the /ask at the end
-                        json={"question": prompt, "filename": st.session_state.current_filename },
-=======
             with st.spinner("Je réfléchis..."):
                 try:
-                    res = requests.post(
-                        API_ASK_URL,
-                        json=body,
->>>>>>> 83a2abc (code de l'interface)
-                        timeout=120,
-                    )
+                    res = requests.post(API_ASK_URL, json=body, timeout=120)
 
                     if res.status_code == 200:
                         data = res.json()
-                        reponse_ia = data.get("answer", "No response received.")
+                        reponse_ia = data.get("answer", "Aucune réponse reçue.")
                         st.markdown(reponse_ia)
                         st.session_state.messages.append(
                             {"role": "assistant", "content": reponse_ia}
                         )
-                        
-                        # Save to MongoDB only if enabled
-                        if st.session_state.save_to_history:
-                            if chat_with_history is None and st.session_state.current_filename:
-                                chat_with_history = MongoChatMessageHistory(
-                                    session_id=st.session_state.current_filename,
-                                    connection_string="mongodb+srv://projetcloud:projetcloud@geminirag.shbfocl.mongodb.net/?appName=GeminiRAG",
-                                    collection_name="chat_history",
-                                    database_name="smartstudy"
-                                )
-                            if chat_with_history:
-                                chat_with_history.add_user_message(prompt)
-                                chat_with_history.add_ai_message(reponse_ia)
+
+                        # Sauvegarde dans MongoDB
+                        if st.session_state.session_id:
+                            history = get_chat_history(st.session_state.session_id)
+                            history.add_user_message(prompt)
+                            history.add_ai_message(reponse_ia)
+                            # Invalide le cache pour que la sidebar se mette à jour
+                            load_past_sessions.clear()
+                            load_session_messages.clear()
+
                     else:
-                        error_msg = f"Error {res.status_code}: {res.text}"
-                        st.error(error_msg)
+                        st.error(f"Erreur {res.status_code} : {res.text}")
 
                 except Exception as e:
-<<<<<<< HEAD
-                    st.error(f"Connection error: {e}")
-
-=======
                     st.error(f"Erreur de connexion : {e}")
->>>>>>> 83a2abc (code de l'interface)
