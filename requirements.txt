@@ -8,3 +8,8 @@ langchain-community==0.0.38
 langchain-core==0.1.52
 langchain-google-vertexai
 langchain-mongodb
+
+streamlit
+google-cloud-storage
+google-auth
+requests
