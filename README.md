@@ -1,5 +1,11 @@
 # SmartStudy – Cloud-Based AI Academic Assistant
 
+# Notes
+
+This repository represents the academic project structure and implementation.
+
+Cloud deployment and infrastructure configuration were performed directly through Google Cloud services during development.
+
 ## Overview
 
 SmartStudy is a cloud-based academic assistant designed to help students interact intelligently with course material uploaded as PDF documents.
@@ -175,9 +181,3 @@ The quiz system:
 * encourages active learning.
 
 ---
-
-# Notes
-
-This repository represents the academic project structure and implementation.
-
-Cloud deployment and infrastructure configuration were performed directly through Google Cloud services during development.
