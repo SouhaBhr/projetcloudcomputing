@@ -8,7 +8,7 @@ Cloud deployment and infrastructure configuration were performed directly throug
 
 ## Overview
 
-SmartStudy is a cloud-based academic assistant designed to help students interact intelligently with course material uploaded as PDF documents.
+SmartStudy is a cloud-based academic assistant designed to help students interact intelligently with course material uploaded as PDF documents(see DEMO - VIDEO.mp4).
 
 The system uses a Retrieval-Augmented Generation (RAG) architecture combining:
 
