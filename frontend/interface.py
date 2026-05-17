@@ -602,6 +602,17 @@ if not st.session_state.authenticated:
     show_auth_page()
     st.stop()
 
+if st.session_state.authenticated and not st.session_state.file_ready and not st.session_state.is_guest:
+    past_sessions = load_past_sessions(st.session_state.user_id)
+    if past_sessions:
+        latest_session = past_sessions[0]
+        sid = latest_session["_id"]
+        if sid:
+            st.session_state.session_id = sid
+            st.session_state.current_filename = get_filename_from_session(sid)
+            st.session_state.file_ready = True
+            st.session_state.messages = load_session_messages(sid)
+
 # ══════════════════════════════════════════
 # MAIN APP
 # ══════════════════════════════════════════
@@ -625,7 +636,16 @@ with st.sidebar:
     st.divider()
 
     if st.button("✏️ New conversation", use_container_width=True):
-        reset_app_state()
+        st.session_state.messages = []
+        st.session_state.quiz_data = None
+        st.session_state.quiz_answers = {}
+        st.session_state.quiz_submitted = False
+        st.session_state.show_quiz = False
+
+        if st.session_state.current_filename and st.session_state.user_id:
+            st.session_state.session_id = make_session_id(
+                st.session_state.user_id, st.session_state.current_filename
+            ) 
         st.rerun()
 
     if st.session_state.file_ready and not st.session_state.show_quiz:
