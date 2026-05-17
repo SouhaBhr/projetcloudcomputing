@@ -150,21 +150,6 @@ For simplicity during the academic project, some values may appear directly in t
 
 ---
 
-# Technologies Used
-
-* Python
-* FastAPI
-* Streamlit
-* LangChain
-* MongoDB Atlas
-* Google Cloud Storage
-* Google Cloud Functions
-* Google Cloud Run
-* Vertex AI
-* Gemini 2.5 Flash
-
----
-
 # Features
 
 ## Ask Mode
