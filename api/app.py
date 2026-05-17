@@ -23,7 +23,7 @@ class QuestionRequest(BaseModel):
     filename: Optional[str] = None
     mode: Literal["normal", "persona"] = "normal"
 
-
+# Retrieves a retriever configured for the MongoDB collection and VertexAI embeddings.
 def get_retriever(filename: Optional[str] = None):
     client = MongoClient(os.environ.get("MONGO_URI"))
     collection = client["smartstudy"]["context"]
@@ -194,7 +194,7 @@ Topic:
         response = llm.invoke(quiz_prompt)
         raw = response.content.strip()
 
-        # Nettoyage défensif : si le LLM enrobe dans ```json ... ```
+        # clean up code blocks if the model wrapped the JSON in ```json ... ``` or ``` ... ```
         if raw.startswith("```"):
             raw = re.sub(r"^```(?:json)?\s*", "", raw)
             raw = re.sub(r"\s*```$", "", raw)
