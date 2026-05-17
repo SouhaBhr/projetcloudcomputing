@@ -1,0 +1,14 @@
+functions-framework
+google-cloud-storage
+pymongo
+pymupdf
+pypdf
+packaging>=24.0
+
+langchain
+langchain-community
+langchain-text-splitters
+langchain-google-vertexai
+langchain-mongodb
+
+
