@@ -63,8 +63,8 @@ def save_quiz_to_history(
     session_id: str, questions: list, answers: dict, score: int, total: int
 ):
     pct = round(100 * score / total)
-    user_msg = f" **Quiz effectué** — {len(questions)} questions sur ce document."
-    lines = [f"## Résultat du Quiz — {score}/{total} ({pct}%)\n"]
+    user_msg = f"📝 **Quiz effectué** — {len(questions)} questions sur ce document."
+    lines = [f"## 🧠 Résultat du Quiz — {score}/{total} ({pct}%)\n"]
     for i, q in enumerate(questions):
         user_answer = answers.get(i)
         correct = q["correct_index"]
@@ -205,13 +205,13 @@ with st.sidebar:
 
     st.divider()
 
-    if st.button("Nouvelle conversation", use_container_width=True):
+    if st.button("✏️ Nouvelle conversation", use_container_width=True):
         for key in list(defaults.keys()):
             st.session_state[key] = defaults[key]
         st.rerun()
 
     if st.session_state.file_ready and not st.session_state.show_quiz:
-        if st.button("Lancer un quiz", use_container_width=True, type="primary"):
+        if st.button("🧠 Lancer un quiz", use_container_width=True, type="primary"):
             st.session_state.show_quiz = True
             st.session_state.quiz_data = None
             st.session_state.quiz_answers = {}
@@ -219,7 +219,7 @@ with st.sidebar:
             st.rerun()
 
     st.divider()
-    st.markdown("#### Conversations récentes")
+    st.markdown("#### 🕐 Conversations récentes")
 
     if st.session_state.get("mongo_error"):
         st.error(f"MongoDB : {st.session_state.mongo_error}")
@@ -237,9 +237,9 @@ with st.sidebar:
             is_active = sid == st.session_state.session_id
             prefix = "▶ " if is_active else ""
             label = (
-                f"{prefix} {filename}\n {date}"
+                f"{prefix}📄 {filename}\n🕐 {date}"
                 if date
-                else f"{prefix} {filename}"
+                else f"{prefix}📄 {filename}"
             )
 
             if st.button(label, key=f"sess_{sid}", use_container_width=True):
@@ -275,7 +275,7 @@ if not st.session_state.file_ready:
                 with st.status(
                     "Traitement du document...", expanded=True
                 ) as status:
-                    st.write("Envoi du fichier vers Google Cloud Storage...")
+                    st.write("📤 Envoi du fichier vers Google Cloud Storage...")
                     client = get_storage_client()
                     bucket = client.bucket(BUCKET_NAME)
                     blob = bucket.blob(uploaded_file.name)
@@ -310,7 +310,7 @@ if st.session_state.file_ready and st.session_state.show_quiz:
 
     col_title, col_close = st.columns([5, 1])
     with col_title:
-        st.subheader("Quiz interactif")
+        st.subheader("🧠 Quiz interactif")
     with col_close:
         if st.button("✖ Fermer", use_container_width=True):
             st.session_state.show_quiz = False
@@ -354,7 +354,7 @@ if st.session_state.file_ready and st.session_state.show_quiz:
 
         if not st.session_state.quiz_submitted:
             st.info(
-                f" **{len(questions)} questions** — Choisis une reponse pour chacune, puis soumets."
+                f"📋 **{len(questions)} questions** — Choisis une reponse pour chacune, puis soumets."
             )
 
             for i, q in enumerate(questions):
@@ -397,15 +397,15 @@ if st.session_state.file_ready and st.session_state.show_quiz:
             pct = round(100 * score / total)
 
             if pct >= 80:
-                st.success(f"Excellent ! Score : **{score}/{total}** ({pct}%)")
+                st.success(f"🏆 Excellent ! Score : **{score}/{total}** ({pct}%)")
                 feedback = (
                     "Tu maitrises bien ce chapitre. Continue comme ca !"
                 )
             elif pct >= 50:
-                st.warning(f"Pas mal ! Score : **{score}/{total}** ({pct}%)")
+                st.warning(f"👍 Pas mal ! Score : **{score}/{total}** ({pct}%)")
                 feedback = "Quelques notions a revoir. Regarde bien les explications ci-dessous."
             else:
-                st.error(f"A retravailler. Score : **{score}/{total}** ({pct}%)")
+                st.error(f"📚 A retravailler. Score : **{score}/{total}** ({pct}%)")
                 feedback = "Pas de panique, c'est en se trompant qu'on apprend ! Lis bien les corrections."
 
             st.markdown(f"_{feedback}_")
@@ -471,7 +471,7 @@ if st.session_state.file_ready and st.session_state.show_quiz:
                         del st.session_state.quiz_saved
                     st.rerun()
             with col2:
-                if st.button("Retour au chat", use_container_width=True):
+                if st.button("💬 Retour au chat", use_container_width=True):
                     st.session_state.show_quiz = False
                     if "quiz_saved" in st.session_state:
                         del st.session_state.quiz_saved
@@ -485,10 +485,10 @@ elif st.session_state.file_ready:
     )
     st.divider()
 
-    mode_label = "🎓 Mentor" if mode == "persona" else "Direct"
+    mode_label = "🎓 Mentor" if mode == "persona" else "📝 Direct"
     st.subheader(f"Pose tes questions — Mode {mode_label}")
     st.caption(
-        "Astuce : utilise le bouton **Lancer un quiz** dans la sidebar pour te tester."
+        "Astuce : utilise le bouton **🧠 Lancer un quiz** dans la sidebar pour te tester."
     )
 
     for msg in st.session_state.messages:
